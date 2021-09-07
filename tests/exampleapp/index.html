@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/x-icon" href="data:image/x-icon;base64,A">
+  <title>StateCircus Example App</title>
+  <noscript>Javascript is required</noscript>
+</head>
+
+<body id="body" class="cool-styles" style="height: 90vh">
+  <div id="divlogin"></div>
+  <div id="divapplication" style="display: none"></div>
+</body>
+
+<script src = "sc_tab.js"></script>
+<script src = "sc_shared.js"></script>
+
+<script>function eid(id) {return document.getElementById(id)}</script>
+
+<script type="module">
+  import {renderLogin} from './login.js'
+  import {renderApplication} from './application.js'
+
+  let retries = 0
+
+  statecircus_handleStatechange = function() {
+    document.body.style.cursor = 'default'
+    if (document.hasFocus()) {
+      if (sc_state.debug) {
+        console.log("---statecircus state change:")
+        console.log(sc_state)
+        console.log("---")
+      }
+      if (sc_state.alertmessage) alert(sc_state.alertmessage)
+    }
+
+    if (sc_state.sessionkey == null) {
+      eid("divapplication").style.display = "none"
+      eid("divlogin").style.display = "block"
+      renderLogin(eid("divlogin"))
+      return
+    }
+
+    if (sc_state.values) { 
+      if (eid("divapplication").style.display == "none") {
+        eid("divlogin").style.display = "none"
+        eid("divapplication").style.display = "block"
+      }
+      renderApplication(eid("divapplication"))
+    }
+  }
+</script>
+</html>

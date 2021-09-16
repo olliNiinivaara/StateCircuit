@@ -152,6 +152,12 @@ proc subscribe*[T, MaxSessions, MaxTopics](circus: StateCircus[T, MaxSessions, M
     circus.topicstamps.insert(topic, 0)
     discard circus.bus.subscribe(sessionKey.Subscriber, topic, true)
 
+proc subscribe*[T, MaxSessions, MaxTopics](circus: StateCircus[T, MaxSessions, MaxTopics], sessionKey: SessionKey, topics: IntSet) =
+  {.gcsafe.}:
+    for topic in topics:
+      circus.topicstamps.insert(topic.Topic, 0)
+      discard circus.bus.subscribe(sessionKey.Subscriber, topic, true)
+
 proc push*[T, MaxSessions, MaxTopics](circus: StateCircus[T, MaxSessions, MaxTopics], topics: sink openArray[Topic], state: sink JsonNode, actions: sink JsonNode = NullNode) {.inline.} =
   {.gcsafe.}:
     if topics.len == 1: circus.bus.push(topics[0], Payload(state: $state, actions: $actions))

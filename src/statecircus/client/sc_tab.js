@@ -1,9 +1,9 @@
 let sc_state
-const statecircus_worker = new SharedWorker('sc_worker.js').port
+const statecircus_worker = new SharedWorker('/sc_worker.js').port
 const statecircus_recvchannel = new BroadcastChannel('statecircus_channel')
-let statecircus_workerconfirmedconnection = false
 let statecircus_handleStatechange
-let statecircus_queryExpiredtopics
+let handshaking = true
+let closingmyself = false
 
 function acceptLogin(sessioninfo) {
   document.body.style.cursor = 'wait'
@@ -45,7 +45,7 @@ async function queryServer(path, query) {
 }
 
 function updateState(mutations) {
-  if (mutations) statecircus_merge(mutations)
+  if (mutations) handleStatemerge(mutations)
   statecircus_worker.postMessage({"type": "__statecircus_state", "msg": sc_state})
 }
 
@@ -58,29 +58,53 @@ statecircus_recvchannel.onmessage = function (msg) {
     if (sc_state.debug) console.log("dataless msg from worker")
     return
   }
-  if (msg.data.expiredtopics) {
-    statecircus_queryExpiredtopics(msg.data.expiredtopics)
-    return
-  }
+
   if (msg.data.workerconfirmedconnection) {
-    statecircus_workerconfirmedconnection = true
+    if (!handshaking) return 
+    if (msg.data.workerconfirmedconnection.has(window.location.pathname)) {
+      statecircus_worker.postMessage({"type": "__closetab", "msg": window.location.pathname})
+      return
+    }  
+    if (statecircus_handleStatechange) {
+      statecircus_worker.postMessage({"type": "__tabconfirmedconnection", "msg": window.location.pathname})
+      handshaking = false
+    }
     return
   }
-  if (!statecircus_workerconfirmedconnection) {
-    if (statecircus_handleStatechange) statecircus_worker.postMessage({"type": "__tabconfirmedconnection"})
-    else return
+
+  if (handshaking) return
+  
+  if (msg.data.focustab) {
+    if (window.location.pathname == msg.data.focustab && !closingmyself) {
+      window.focus()
+    }
+    return
+  }
+  if (msg.data.closetab) {
+    if (window.location.pathname == msg.data.closetab) {
+      closingmyself = true
+      window.close()
+      if (!window.closed) {
+        statecircus_recvchannel.close()
+        body.innerHTML = "Page open elsewhere"
+        statecircus_worker.postMessage({"type": "__focustab", "msg": window.location.pathname})
+        statecircus_worker.close()
+      }
+    }
+    return
   }
   sc_state = msg.data
   statecircus_handleStatechange()
 }
 
 addEventListener("beforeunload", function (e) {
-  if (sc_state && sc_state.wsstate == WsState.OPEN && sc_state.tabcount == 1) {
+  if (closingmyself) return
+  if (sc_state && sc_state.wsstate == WsState.OPEN && sc_state.tabs.size == 1) {
     if (!window.confirm("Really exit?")) {
       e.preventDefault()
       return
     }
   }
   statecircus_recvchannel.close()
-  statecircus_worker.postMessage({"type": "__tabclosing"})
+  statecircus_worker.postMessage({"type": "__tabclosing", "msg": window.location.pathname})
 })

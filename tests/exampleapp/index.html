@@ -9,7 +9,7 @@
   <noscript>Javascript is required</noscript>
 </head>
 
-<body id="body" class="cool-styles" style="height: 90vh">
+<body id="body" style="height: 90vh">
   <div id="divlogin"></div>
   <div id="divapplication" style="display: none"></div>
 </body>
@@ -22,8 +22,6 @@
 <script type="module">
   import {renderLogin} from './login.js'
   import {renderApplication} from './application.js'
-
-  let retries = 0
 
   statecircus_handleStatechange = function() {
     document.body.style.cursor = 'default'

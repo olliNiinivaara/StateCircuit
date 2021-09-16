@@ -6,10 +6,10 @@ importScripts("sc_shared.js")
 class State {
   sessionkey = null
   wsstate = WsState.LOGGEDOUT
-  tabcount = 0
   debug = false
   alertmessage = null
   at = 0
+  tabs = new Map()
 }
 
 const WORKER = true
@@ -268,15 +268,23 @@ function sendTowebsocket(message) {
 onconnect = async function(e) {
   debug("new tab connected to worker")
   let port = e.ports[0]
-  sc_state.tabcount++
   let connectionconfirmed = false
 
   port.onmessage = function(e) {
     debug(null, e.data)
     if (!e.data) return
 
-    if (e.data.type == "__tabconfirmedconnection") connectionconfirmed = true
-
+    if (e.data.type == "__tabconfirmedconnection") {
+      connectionconfirmed = true
+      if (e.data.msg) sc_state.tabs.set(e.data.msg, null)
+    }
+    else if (e.data.type == "__focustab") {
+      channel.postMessage({"focustab": e.data.msg})
+    }
+    else if (e.data.type == "__closetab") {
+      sc_state.tabs.delete(e.data.msg)
+      channel.postMessage({"closetab": e.data.msg})
+    }
     else if (e.data.type == "__acceptlogin") {
       try {
         sc_state.sessionkey = e.data.msg.sessionkey
@@ -300,8 +308,8 @@ onconnect = async function(e) {
     else if (e.data.type == "__queryFinished") finishQuery(e.data.msg)
     else if (e.data.type == "__logout") logOut(e.data.msg)
     else if (e.data.type == "__tabclosing") {
-      sc_state.tabcount--
-      if (sc_state.tabcount == 0) logOut("last tab closed")
+      sc_state.tabs.delete(e.data.msg)
+      if (sc_state.tabs.size == 0) logOut("last tab closed")
     }
     else if (e.data.type == "__simulatedoutage") {
       if (e.data.msg.simulatedoutage) {
@@ -315,10 +323,13 @@ onconnect = async function(e) {
     }
     else sendTowebsocket({"e": e.data.type, "m": e.data.msg})
   }
-
+  
+  let time = 10
   while (!connectionconfirmed) {
-    channel.postMessage(sc_state)
-    await new Promise(r => setTimeout(r, 200))
+    channel.postMessage({"workerconfirmedconnection": sc_state.tabs})
+    await new Promise(r => setTimeout(r, time))
+    time += 10
+    if (time > 10000) logOut("connection with tab not confirmed")
   }
-  channel.postMessage({"workerconfirmedconnection": true})
+  channel.postMessage(sc_state)
 }

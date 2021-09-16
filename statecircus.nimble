@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.5.0"
+version       = "0.5.1"
 author        = "Olli Niinivaara"
 description   = "Session & state management solution for web applications"
 license       = "MIT"

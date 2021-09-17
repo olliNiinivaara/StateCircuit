@@ -2,25 +2,16 @@
 // firefox about:debugging#/runtime/this-firefox
 
 importScripts("sc_shared.js")
+importScripts("handlers.js")
 
-class State {
-  sessionkey = null
-  wsstate = WsState.LOGGEDOUT
-  debug = false
-  alertmessage = null
-  at = 0
-  tabs = new Map()
-}
-
-const WORKER = true
 const wsOPEN = 1
 const channel = new BroadcastChannel('statecircus_channel')
+const circus = createStateCircus(true)
+initStateCircus(circus)
 
 let initialized = false
 let webSocket
-let sc_state = new State()
 let websocketurl
-let queryingsince = 0
 let postponedmessages = []
 let topictimestamps = new Map()
 
@@ -32,7 +23,7 @@ function log(text, object) {
 }
 
 function debug(text, object) {
-  if (sc_state &&  !sc_state.debug) return
+  if (circus.state && !circus.state.debug) return
   console.trace()
   if (text) console.log("  ", text)
   if (object) console.log("  ", object)
@@ -40,12 +31,12 @@ function debug(text, object) {
 }
 
 function update(msg) {
-  if (msg.now < sc_state.at) {
-    debug("stale update msg < " + sc_state, msg)
+  if (msg.now < circus.state.at) {
+    debug("stale update msg < " + circus.state, msg)
     return false
   }
 
-  if (queryingsince > 0) {
+  if (circus.state.queryingsince > 0) {
     postponedmessages.push(msg)
     return false
   }
@@ -53,16 +44,16 @@ function update(msg) {
   for (let msgtopicstamp of msg.tos) {
     const locallyat = topictimestamps.get(msgtopicstamp.to)
     if (locallyat && locallyat < msgtopicstamp.at) {
-      handleRefresh()
+      circus.handleRefresh()
       return false
     }
   }
-  sc_state.at = msg.now
+  circus.state.at = msg.now
   for (let msgtopicstamp of msg.tos) {
     topictimestamps.set(msgtopicstamp.to, msg.now)
   }
-  if (msg.st) handleStatemerge(msg.st)
-  if (msg.a) handleActions(msg.a)
+  if (msg.st) circus.handleStatemerge(msg.st)
+  if (msg.a) circus.handleActions(msg.a)
   if (msg.st || msg.a) return true
 }
 
@@ -72,30 +63,30 @@ function refresh(msg) {
     const locallyat = topictimestamps.get(topic)
     if (!locallyat || locallyat < msg.then) {
       topictimestamps.set(topic, msg.then)
-      if (sc_state.at < msg.then) sc_state.at = msg.then
+      if (circus.state.at < msg.then) circus.state.at = msg.then
       statechange = true
     }
   }
   if (statechange) {
-    if (msg.st) handleStatemerge(msg.st)
-    if (msg.a) handleActions(msg.a)
+    if (msg.st) circus.handleStatemerge(msg.st)
+    if (msg.a) circus.handleActions(msg.a)
     if (msg.st || msg.a) return true
   }
   return false
 }
 
 function requery(topics) {
-  handleQuery(topics)
+  circus.handleQuery(topics)
   return false
 }
 
 function query(msg) {
   for (let msgtopicstamp of msg.tos) {
     topictimestamps.set(msgtopicstamp.to, msgtopicstamp.at)
-    if (msgtopicstamp.at > sc_state.at) sc_state.at = msgtopicstamp.at
+    if (msgtopicstamp.at > circus.state.at) circus.state.at = msgtopicstamp.at
   }
-  if (msg.st) handleStatemerge(msg.st)
-  if (msg.a) handleActions(msg.a)
+  if (msg.st) circus.handleStatemerge(msg.st)
+  if (msg.a) circus.handleActions(msg.a)
   return (msg.st || msg.a)
 }
 
@@ -120,7 +111,7 @@ function processPendingmessages() {
   let statechange = false
   for (let msg of postponedmessages) {
     statechange = processMsg(msg) || statechange
-    if (sc_state.wsstate != WsState.OPEN) return
+    if (circus.state.sessionstate != circus.SessionStates.OPEN) return
   }
   postponedmessages = []
   return statechange
@@ -131,38 +122,38 @@ function logOut(reason) {
   if (webSocket != null) webSocket.close(4000)
   initialized = false
   webSocket = null
-  sc_state = new State()
+  circus.defaultState()
   websocketurl = null
   queryingsince = 0
   postponedmessages = []
-  sc_state.alertmessage = reason
-  channel.postMessage(sc_state)
-  sc_state.alertmessage = null
+  circus.state.alertmessage = reason
+  channel.postMessage(circus.state)
+  circus.state.alertmessage = null
 }
 
 function connectUntilTimeout() {
-  if (!sc_state.sessionkey) {
+  if (!circus.state.sessionkey) {
     logOut("no session")
     return
   }
   if (webSocket && webSocket.readyState == wsOPEN) {
-    sc_state.wsstate = WsState.OPEN
-    channel.postMessage(sc_state)
+    circus.state.sessionstate = circus.SessionStates.OPEN
+    channel.postMessage(circus.state)
     return
   }
-  if (sc_state.wsstate == WsState.CONNECTING) return
-  let informtabs = sc_state.wsstate == WsState.OPEN
-  sc_state.wsstate = WsState.CONNECTING
-  if (informtabs) channel.postMessage(sc_state)
+  if (circus.state.sessionstate == circus.SessionStates.CONNECTING) return
+  let informpages = circus.state.sessionstate == circus.SessionStates.OPEN
+  circus.state.sessionstate = circus.SessionStates.CONNECTING
+  if (informpages) channel.postMessage(circus.state)
   connectWs()
   setTimeout( () => {
-    if (!webSocket || webSocket.readyState != wsOPEN) handleConnectfailure()
+    if (!webSocket || webSocket.readyState != wsOPEN) circus.handleConnectfailure()
   }, 10000)
 }
 
 function connectWs() {
   debug("connectWs")
-  if (!sc_state.sessionkey || !websocketurl) {
+  if (!circus.state.sessionkey || !websocketurl) {
     logOut("connectWs called without session or url")
     return
   }
@@ -176,8 +167,8 @@ function connectWs() {
   }
   webSocket.onopen = function() {
     if (initialized) {
-      sc_state.wsstate = WsState.OPEN
-      handleConnectsuccess()
+      circus.state.sessionstate = circus.SessionStates.OPEN
+      circus.handleConnectsuccess()
     }
     webSocket.onclose = function(event) {
       debug("ws closed: " + event.code)
@@ -186,7 +177,7 @@ function connectWs() {
     }
     webSocket.onmessage = function(event) {
       debug("ws message", event.data)
-      if (sc_state.wsstate == WsState.SIMULATEDOUTAGE) {
+      if (circus.state.sessionstate == circus.SessionStates.SIMULATEDOUTAGE) {
         log("ws message ignored because network outage is being simulated")
         return
       }
@@ -200,25 +191,25 @@ function connectWs() {
         return
       }
       if (message.x == "o") {
-        handleServeroverload()
-        channel.postMessage(sc_state)
-        sc_state.alertmessage = null
+        circus.handleServeroverload()
+        channel.postMessage(circus.state)
+        circus.state.alertmessage = null
         return
       }
       if (message.x == "i") {
-        sc_state.wsstate = WsState.OPEN
-        handleConnectsuccess(message.st)
+        circus.state.sessionstate = circus.SessionStates.OPEN
+        circus.handleConnectsuccess(message.st)
         initialized = true
-        channel.postMessage(sc_state)
-        sc_state.alertmessage = null
+        // channel.postMessage(circus.state)
+        circus.state.alertmessage = null
         return
       }
       if (message.x == "u") {
         let statechange = processMsg(message.d)
-        if (sc_state.wsstate == WsState.LOGGEDOUT) return
+        if (circus.state.sessionstate == circus.SessionStates.LOGGEDOUT) return
         if (statechange) {
-          channel.postMessage(sc_state)
-          sc_state.alertmessage = null
+          channel.postMessage(circus.state)
+          circus.state.alertmessage = null
         }
         return
       }
@@ -228,35 +219,35 @@ function connectWs() {
 }
 
 function finishQuery(msg) {
-  queryingsince = 0
+  circus.state.queryingsince = 0
   let statechange = false
   if (msg) {
     if (msg.x == "q") statechange = processMsg(msg.d)
     else if (msg.x == "r") {
       for (let m of msg.d) {
         statechange = processMsg(m) || statechange
-        if (sc_state.wsstate == WsState.LOGGEDOUT) return
+        if (circus.state.sessionstate == circus.SessionStates.LOGGEDOUT) return
       }
     } else {
       debug("unrecognized message type", msg)
       return
     }
   }
-  if (sc_state.wsstate == WsState.OPEN) {
-    statechange = processPendingmessages || statechange
-    if (statechange) channel.postMessage(sc_state)
-    sc_state.alertmessage = null
+  if (circus.state.sessionstate == circus.SessionStates.OPEN) {
+    statechange = processPendingmessages() || statechange
+    if (statechange) channel.postMessage(circus.state)
+    circus.state.alertmessage = null
   }
 }
 
 function sendTowebsocket(message) {
-  if (sc_state.wsstate == WsState.LOGGEDOUT) return
+  if (circus.state.sessionstate == circus.SessionStates.LOGGEDOUT) return
   if (!webSocket || webSocket.readyState != wsOPEN) {
-    sc_state.wsstate = WsState.CLOSED
+    circus.state.sessionstate = circus.SessionStates.CLOSED
     connectUntilTimeout()
   }
   try {
-    message.k = sc_state.sessionkey
+    message.k = circus.state.sessionkey
     message = JSON.stringify(message)
   } catch (ex) {
     debug("cannot send, syntax error: " + ex)
@@ -266,7 +257,7 @@ function sendTowebsocket(message) {
 }
 
 onconnect = async function(e) {
-  debug("new tab connected to worker")
+  debug("new page connected to worker")
   let port = e.ports[0]
   let connectionconfirmed = false
 
@@ -274,25 +265,25 @@ onconnect = async function(e) {
     debug(null, e.data)
     if (!e.data) return
 
-    if (e.data.type == "__tabconfirmedconnection") {
+    if (e.data.type == "__pageconfirmedconnection") {
       connectionconfirmed = true
-      if (e.data.msg) sc_state.tabs.set(e.data.msg, null)
+      if (e.data.msg) circus.state.pages.set(e.data.msg, null)
     }
-    else if (e.data.type == "__focustab") {
-      channel.postMessage({"focustab": e.data.msg})
+    else if (e.data.type == "__focuspage") {
+      channel.postMessage({"focuspage": e.data.msg})
     }
-    else if (e.data.type == "__closetab") {
-      sc_state.tabs.delete(e.data.msg)
-      channel.postMessage({"closetab": e.data.msg})
+    else if (e.data.type == "__closepage") {
+      circus.state.pages.delete(e.data.msg)
+      channel.postMessage({"closepage": e.data.msg})
     }
     else if (e.data.type == "__acceptlogin") {
       try {
-        sc_state.sessionkey = e.data.msg.sessionkey
+        circus.state.sessionkey = e.data.msg.sessionkey
         let wsproto = "wss://"
         if (location.protocol == "http:") wsproto = "ws://"
         let path = location.host + e.data.msg.websocketpath
         if (e.data.msg.websocketpath.startsWith(":")) path = location.hostname + e.data.msg.websocketpath
-        websocketurl = wsproto + path + "/S" + sc_state.sessionkey
+        websocketurl = wsproto + path + "/S" + circus.state.sessionkey
         connectUntilTimeout()
       } catch (ex) {
         console.log(ex)
@@ -300,36 +291,36 @@ onconnect = async function(e) {
       }
     }
     else if (e.data.type == "__statecircus_state") {
-      sc_state = e.data.msg
-      channel.postMessage(sc_state)
-      sc_state.alertmessage = null
+      circus.state = e.data.msg
+      channel.postMessage(circus.state)
+      circus.state.alertmessage = null
     }
-    else if (e.data.type == "__queryStarted") queryingsince = Date.now()
+    else if (e.data.type == "__queryStarted") circus.state.queryingsince = Date.now()
     else if (e.data.type == "__queryFinished") finishQuery(e.data.msg)
     else if (e.data.type == "__logout") logOut(e.data.msg)
-    else if (e.data.type == "__tabclosing") {
-      sc_state.tabs.delete(e.data.msg)
-      if (sc_state.tabs.size == 0) logOut("last tab closed")
+    else if (e.data.type == "__pageclosing") {
+      circus.state.pages.delete(e.data.msg)
+      if (circus.state.pages.size == 0) logOut("last page closed")
     }
     else if (e.data.type == "__simulatedoutage") {
       if (e.data.msg.simulatedoutage) {
-        if (sc_state.wsstate == WsState.OPEN) sc_state.wsstate = WsState.SIMULATEDOUTAGE
+        if (circus.state.sessionstate == circus.SessionStates.OPEN) circus.state.sessionstate = circus.SessionStates.SIMULATEDOUTAGE
       }
       else {
-        if (!webSocket || webSocket.readyState != wsOPEN) sc_state.wsstate = WsState.CLOSED
-        else sc_state.wsstate = WsState.OPEN
+        if (!webSocket || webSocket.readyState != wsOPEN) circus.state.sessionstate = circus.SessionStates.CLOSED
+        else circus.state.sessionstate = circus.SessionStates.OPEN
       }
-      channel.postMessage(sc_state)
+      channel.postMessage(circus.state)
     }
     else sendTowebsocket({"e": e.data.type, "m": e.data.msg})
   }
   
   let time = 10
   while (!connectionconfirmed) {
-    channel.postMessage({"workerconfirmedconnection": sc_state.tabs})
+    channel.postMessage({"workerconfirmedconnection": circus.state.pages})
     await new Promise(r => setTimeout(r, time))
     time += 10
-    if (time > 10000) logOut("connection with tab not confirmed")
+    if (time > 10000) logOut("connection with page not confirmed")
   }
-  channel.postMessage(sc_state)
+  channel.postMessage(circus.state)
 }

@@ -1,3 +1,5 @@
+import {circus} from '/sc_page.js'
+
 const loginform = `
   <form id="formlogin" autocomplete="on" style="text-align: center;">
   <p><strong>Application - Login</strong></p>
@@ -30,12 +32,12 @@ async function submit(e) {
   let password = eid("inputpassword").value
   eid("inputpassword").value = ""
   e.preventDefault()
-  let result = await queryServer("/login",{
+  let result = await circus.queryServer("/login",{
     "userid": eid("inputemail").value,
     "password": password
   })
   if (!result) alert("Wrong email or password"); else {
-    acceptLogin(result)
+    circus.acceptLogin(result)
   }
 }
 

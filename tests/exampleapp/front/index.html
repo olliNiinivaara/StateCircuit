@@ -14,40 +14,34 @@
   <div id="divapplication" style="display: none"></div>
 </body>
 
-<script src = "sc_tab.js"></script>
-<script src = "sc_shared.js"></script>
+<script src = "/sc_shared.js"></script>
+<script src = "./handlers.js"></script>
 
 <script>function eid(id) {return document.getElementById(id)}</script>
 
 <script type="module">
+  import {setStateCircus} from '/sc_page.js'
   import {renderLogin} from './login.js'
   import {renderApplication} from './application.js'
 
-  statecircus_handleStatechange = function() {
-    document.body.style.cursor = 'default'
-    if (document.hasFocus()) {
-      if (sc_state.debug) {
-        console.log("---statecircus state change:")
-        console.log(sc_state)
-        console.log("---")
-      }
-      if (sc_state.alertmessage) alert(sc_state.alertmessage)
-    }
+  let circus = createStateCircus()
+  initStateCircus(circus)
+  setStateCircus(circus)
 
-    if (sc_state.sessionkey == null) {
+  circus.setStateHandler(function() {
+    if (circus.state.sessionkey == null) {
       eid("divapplication").style.display = "none"
       eid("divlogin").style.display = "block"
       renderLogin(eid("divlogin"))
       return
     }
-
-    if (sc_state.values) { 
+    if (circus.state.values) { 
       if (eid("divapplication").style.display == "none") {
         eid("divlogin").style.display = "none"
         eid("divapplication").style.display = "block"
       }
       renderApplication(eid("divapplication"))
     }
-  }
+  })
 </script>
 </html>

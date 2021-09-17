@@ -1,3 +1,5 @@
+import {circus} from '/sc_page.js'
+
 const application = `
   <input id="input">
   <button id="button">send</button>
@@ -15,15 +17,15 @@ function pressEnter(e) {
 }
 
 function onClick() {
-  sendToServer("insertvalue", {"value": eid("input").value})
+  circus.sendToServer("insertvalue", {"value": eid("input").value})
 }
 
 function onOutage() {
-  statecircus_worker.postMessage({"type": "__simulatedoutage", "msg": {"simulatedoutage": sc_state.wsstate != WsState.SIMULATEDOUTAGE}})
+  circus.sharedworker.postMessage({"type": "__simulatedoutage", "msg": {"simulatedoutage": circus.state.sessionstate != circus.SessionStates.SIMULATEDOUTAGE}})
 }
 
 function onRefresh() {
-  handleRefresh()
+  circus.handleRefresh()
 }
 
 export function renderApplication(element) {
@@ -32,9 +34,9 @@ export function renderApplication(element) {
   eid("button").addEventListener("click", onClick)
   eid("outage").addEventListener("click", onOutage)
   eid("refresh").addEventListener("click", onRefresh)
-  if (sc_state.wsstate == WsState.SIMULATEDOUTAGE) eid("outage").innerHTML = "recover network operation"
+  if (circus.state.sessionstate == circus.SessionStates.SIMULATEDOUTAGE) eid("outage").innerHTML = "recover network operation"
   else eid("outage").innerHTML = "simulate network outage"
-  for (const value of sc_state.values) {
+  for (const value of circus.state.values) {
     let li = document.createElement("li")
     li.appendChild(document.createTextNode(value))
     eid("ul").appendChild(li)

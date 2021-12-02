@@ -18,7 +18,7 @@ let topictimestamps = new Map()
 function log(text, object) {
   console.log("---statecircus sharedworker log:")
   if (text) console.log(text)
-  if (object) console.log(object)
+  if (object) console.log({object})
   console.log("---")
 }
 
@@ -26,8 +26,17 @@ function debug(text, object) {
   if (circus.state && !circus.state.debug) return
   console.trace()
   if (text) console.log("  ", text)
-  if (object) console.log("  ", object)
+  if (object) console.log({object})
   console.log(" ")
+}
+
+function getTopics() {
+  let result = []
+  topictimestamps.forEach(function(_, key) {
+    log("key", key)
+    result.push(key)
+  })
+  return result 
 }
 
 function update(msg) {
@@ -41,12 +50,15 @@ function update(msg) {
     return false
   }
 
+  let expiredtopics = []
+
   for (let msgtopicstamp of msg.tos) {
     const locallyat = topictimestamps.get(msgtopicstamp.to)
-    if (locallyat && locallyat < msgtopicstamp.at) {
-      circus.handleRefresh()
-      return false
-    }
+    if (locallyat && locallyat < msgtopicstamp.at) expiredtopics.push(msgtopicstamp.to)
+  }
+  if (expiredtopics.length > 0) {
+    circus.syncState(expiredtopics)
+    return false
   }
   circus.state.at = msg.now
   for (let msgtopicstamp of msg.tos) {
@@ -57,39 +69,6 @@ function update(msg) {
   if (msg.st || msg.a) return true
 }
 
-function refresh(msg) {
-  let statechange = false
-  for (let topic of msg.to) {
-    const locallyat = topictimestamps.get(topic)
-    if (!locallyat || locallyat < msg.then) {
-      topictimestamps.set(topic, msg.then)
-      if (circus.state.at < msg.then) circus.state.at = msg.then
-      statechange = true
-    }
-  }
-  if (statechange) {
-    if (msg.st) circus.handleStatemerge(msg.st)
-    if (msg.a) circus.handleActions(msg.a)
-    if (msg.st || msg.a) return true
-  }
-  return false
-}
-
-function requery(topics) {
-  circus.handleQuery(topics)
-  return false
-}
-
-function query(msg) {
-  for (let msgtopicstamp of msg.tos) {
-    topictimestamps.set(msgtopicstamp.to, msgtopicstamp.at)
-    if (msgtopicstamp.at > circus.state.at) circus.state.at = msgtopicstamp.at
-  }
-  if (msg.st) circus.handleStatemerge(msg.st)
-  if (msg.a) circus.handleActions(msg.a)
-  return (msg.st || msg.a)
-}
-
 function processMsg(msg) {
   debug("processing",msg)
   try {
@@ -97,10 +76,7 @@ function processMsg(msg) {
       logOut("logout from server")
       return false
     }
-    if (msg.now) return update(msg)
-    if (msg.then) return refresh(msg)
-    if (msg.expiredtopics) return requery(msg.expiredtopics)
-    return query(msg)
+    return update(msg)
   } catch (err) {
     debug(err.message, msg)
     return false
@@ -190,6 +166,10 @@ function connectWs() {
         logOut("ws syntax error")
         return
       }
+      if (message.x == "l") {
+        logOut("logout received")
+        return
+      }
       if (message.x == "o") {
         circus.handleServeroverload()
         channel.postMessage(circus.state)
@@ -198,9 +178,8 @@ function connectWs() {
       }
       if (message.x == "i") {
         circus.state.sessionstate = circus.SessionStates.OPEN
-        circus.handleConnectsuccess(message.st)
+        circus.handleConnectsuccess(message.state, message.topics)
         initialized = true
-        // channel.postMessage(circus.state)
         circus.state.alertmessage = null
         return
       }
@@ -208,8 +187,10 @@ function connectWs() {
         let statechange = processMsg(message.d)
         if (circus.state.sessionstate == circus.SessionStates.LOGGEDOUT) return
         if (statechange) {
+          circus.inspectReceivedState()
           channel.postMessage(circus.state)
           circus.state.alertmessage = null
+          circus.state.once = {}
         }
         return
       }
@@ -223,12 +204,7 @@ function finishQuery(msg) {
   let statechange = false
   if (msg) {
     if (msg.x == "q") statechange = processMsg(msg.d)
-    else if (msg.x == "r") {
-      for (let m of msg.d) {
-        statechange = processMsg(m) || statechange
-        if (circus.state.sessionstate == circus.SessionStates.LOGGEDOUT) return
-      }
-    } else {
+    else {
       debug("unrecognized message type", msg)
       return
     }
@@ -294,13 +270,17 @@ onconnect = async function(e) {
       circus.state = e.data.msg
       channel.postMessage(circus.state)
       circus.state.alertmessage = null
+      circus.state.once = {}
     }
     else if (e.data.type == "__queryStarted") circus.state.queryingsince = Date.now()
     else if (e.data.type == "__queryFinished") finishQuery(e.data.msg)
     else if (e.data.type == "__logout") logOut(e.data.msg)
     else if (e.data.type == "__pageclosing") {
-      circus.state.pages.delete(e.data.msg)
-      if (circus.state.pages.size == 0) logOut("last page closed")
+      if (circus.state) {
+        circus.state.pages.delete(e.data.msg)
+        if (circus.state.pages.size == 0) logOut("last page closed")
+      }
+      else logOut("nopage")
     }
     else if (e.data.type == "__simulatedoutage") {
       if (e.data.msg.simulatedoutage) {

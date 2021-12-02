@@ -1,7 +1,10 @@
+// export let circus
+
 let handshaking = true
 window["closingmyself"] = false
 
 export function setStateCircus(circus) {
+
   circus.sharedworker = new SharedWorker('/sc_worker.js').port
   circus.broadcastchannel = new BroadcastChannel('statecircus_channel')
 
@@ -23,6 +26,88 @@ export function setStateCircus(circus) {
     if (!message) message = {}
     if (typeof (message) != "object") throw("message is not an object")
     circus.sharedworker.postMessage({"type": event, "msg": message})
+  }
+
+  circus.queryServer = async function(path, query) {
+    document.body.style.cursor = 'wait'
+    try {
+      let response
+      try {
+        path = circus.uriprefix + path
+      response = await fetch(path, {
+        body: JSON.stringify({
+          k: circus.state.sessionkey,
+          q: query
+        }), method: "POST"
+      })
+    } catch (er) {return {status: 0, json: null}}
+    if (response.status !== 200) {
+      if (circus.state.debug) console.log("queryServer " + path + ": " + response.status)
+      return {status: response.status, json: null}
+    }
+    let text, json
+    try {
+      text = await response.text()
+      json = JSON.parse(text)
+    } catch (er) {
+      if (circus.state.debug) console.log(er, text)
+      return false
+    }
+    return {status: 200, json: json}
+    } finally {
+      document.body.style.cursor = 'default'
+    }
+  }
+
+  circus.operateServer = async function(path, operation) {
+    document.body.classList.add("waitcursor")
+    try {
+      if (!path.startsWith("/")) path = "/o/" + path
+      path = circus.uriprefix + path
+      let response
+      try {
+        response = await fetch(path, {
+          body: JSON.stringify({
+            k: circus.state.sessionkey,
+            o: operation
+          }), method: "POST"
+        })
+      } catch (er) {return {status: 0, json: null}}
+      if (response.status !== 200) {
+        if (circus.state.debug) console.log("operateServer " + path + ": " + response.status)
+        return {status: response.status, json: null}
+      }
+      let text, json
+      try {
+        text = await response.text()
+        if (text.length == 0) return {status: 200, json: null}
+        json = JSON.parse(text)
+      } catch (er) {
+        if (circus.state.debug) console.log(er, text)
+        return {status: 0, json: null}
+      }
+      return {status: 200, json: json}
+    } finally {
+      document.body.classList.remove("waitcursor")
+    }
+  }
+
+  circus.sendPrivateAction = async function(path, action) {
+    path = circus.uriprefix + path
+    let json = await circus.operateServer(path, action)
+    if (!json) return false
+    circus.handleActions(json.d.a)
+    circus.updateInternalState()
+    return true
+  }
+
+  circus.updatePrivate = async function(field, id, value) {
+    document.body.style.cursor = "wait"
+    try {
+      return await circus.sendPrivateAction(field, {"action": "u", "field": field, "id": parseInt(id), "value": value})
+    } finally {
+      document.body.style.cursor = "default"
+    }
   }
 
   circus.updateInternalState = function(mutations) {
@@ -93,7 +178,7 @@ export function setStateCircus(circus) {
     
     if (msg.data.focuspage) {
       if (window.location.pathname == msg.data.focuspage && !window["closingmyself"]) {
-        window.focus()
+      window.focus()
       }
       return
     }

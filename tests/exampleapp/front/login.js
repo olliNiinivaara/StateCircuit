@@ -1,4 +1,4 @@
-import {circus} from '/sc_page.js'
+// import {circus} from '/sc_page.js'
 
 const loginform = `
   <form id="formlogin" autocomplete="on" style="text-align: center;">

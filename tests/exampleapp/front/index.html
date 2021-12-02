@@ -17,15 +17,22 @@
 <script src = "/sc_shared.js"></script>
 <script src = "./handlers.js"></script>
 
-<script>function eid(id) {return document.getElementById(id)}</script>
+<script>
+  window.name = "index"
+  window.circus = createStateCircus()
+  initStateCircus(circus)
+  function eid(id) {return document.getElementById(id)}
+</script>
 
 <script type="module">
   import {setStateCircus} from '/sc_page.js'
   import {renderLogin} from './login.js'
   import {renderApplication} from './application.js'
 
-  let circus = createStateCircus()
+  /*let circus = createStateCircus()
   initStateCircus(circus)
+  setStateCircus(circus)*/
+
   setStateCircus(circus)
 
   circus.setStateHandler(function() {

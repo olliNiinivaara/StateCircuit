@@ -1,4 +1,4 @@
-import {circus} from '/sc_page.js'
+// import {circus} from '/sc_page.js'
 
 const application = `
   <input id="input">

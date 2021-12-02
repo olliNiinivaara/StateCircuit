@@ -1,5 +1,16 @@
 function createStateCircus(workerscoped = false) {
-  let result = {}
+  let protostate = {
+    "sessionkey": null,
+    "sessionstate": "LOGGEDOUT",
+    "debug": false,
+    "alertmessage": null,
+    "once": {},
+    "at": 0,
+    "pages": new Map(),
+    "queryingsince": 0
+  } 
+  
+  let result = {"state": {}}
 
   result.SessionStates = Object.freeze({
     "LOGGEDOUT": "LOGGEDOUT",
@@ -8,17 +19,23 @@ function createStateCircus(workerscoped = false) {
     "SIMULATEDOUTAGE": "SIMULATEDOUTAGE"
   })
 
-  result.defaultState = function() {  
-    result.state = {
-      "sessionkey": null,
-      "uriprefix": "",
-      "sessionstate": result.SessionStates.LOGGEDOUT,
-      "debug": false,
-      "alertmessage": null,
-      "at": 0,
-      "pages": new Map(),
-      "queryingsince": 0
+  result.inspectReceivedState = function() {}
+
+  result.uriprefix = ""
+
+  result.emptyState = function() {
+    result.state.alertmessage = null
+    result.state.once = {}
+    for (const prop in result.state) {
+      if (!protostate.hasOwnProperty(prop)) {
+        delete result.state[prop]
+      }
     }
+  }
+
+  result.defaultState = function() {
+    Object.assign(result.state, protostate)
+    result.emptyState()
   }
 
   result.defaultState()
@@ -38,19 +55,20 @@ function createStateCircus(workerscoped = false) {
     if (!workerscoped) result.sharedworker.postMessage({"type": "__queryStarted"})
   }
 
-  result.queryState = async function(path, query, ...topics) {
-    if (!path || typeof query != "string" || !topics) {
-      if (result.state.debug) console.log("query parameters missing")
-      return
+  result.sendToServerAndReceive = async function(path, query, ...topics) {
+    if (!path) {
+      console.log("path missing")
+      return {status: 0, json: null}
     }
-    if (!waitForturn()) return
-    let json = null
+    if (!waitForturn()) return {status: 0, json: null}
+    if (!workerscoped) document.body.style.cursor = 'wait'
+    let json
+    if (topics.length == 1 && Array.isArray(topics[0])) topics = topics[0]
     try {
-      if (!(path.startsWith("/") || path.startsWith("."))) path = "/q/" + path
       let response
-      path = result.state.uriprefix + path
-      console.log(path)
       try {
+        path = result.uriprefix + path
+        if (result.state.debug) console.log(path)
         response = await fetch(path, {
           body: JSON.stringify({
             k: result.state.sessionkey,
@@ -58,87 +76,42 @@ function createStateCircus(workerscoped = false) {
             q: query
           }), method: "POST"
         })
-      } catch (er) {return}
-      if (response.status == 204) return
+      } catch (er) {return {status: 0, json: null}}
+      if (response.status == 204) {return {status: 204, json: null}}
       if (response.status == 503) {
         alert(ServerOverloaded)
-        return
+        return {status: 503, json: null}
       }
       if (response.status !== 200) {
-        if (result.state.debug) console.log("queryState " + path + ": " + response.status)
-        return
+        if (circus.state.debug) console.log("sendToServerAndReceive " + path + ": " + response.status)
+        return {status: response.status, json: null}
       }
       let text
       try {
         text = await response.text()
         json = JSON.parse(text)
       } catch (er) {
-        if (result.state.debug) console.log(er, text)
-        json = null
-        return
+        if (circus.state.debug) console.log(er, text)
+        return {status: 0, json: null}
       }
-      if (json.x != "q") {
-        if (result.state.debug) console.log("query reply not q", json)
-        json = null
-        return
-      }
+      return {status: 200, json: json}
     } finally {
       if (workerscoped) finishQuery(json)
       else {
+        document.body.style.cursor = 'default'
         result.state.queryingsince = 0
         result.sharedworker.postMessage({"type": "__queryFinished", "msg": json})
       }
     }
   }
 
-  result.refreshState = async function(path, afterstamp) {
-    if (!waitForturn()) return
-    let json = null
-    try {
-      let response
-      path = result.state.uriprefix + path
-      try {
-        response = await fetch(path, {
-          body: JSON.stringify({
-            k: result.state.sessionkey,
-          at: afterstamp
-          }), method: "POST"
-        })
-      } catch (er) {return}
-      if (response.status == 204) return
-      if (response.status == 503) {
-        alert(ServerOverloaded)
-        return
-      }
-      if (response.status !== 200) {
-        if (result.state.debug) console.log("refreshState " + path + ": " + response.status)
-        return
-      }
-      let text
-      try {
-        text = await response.text()
-        json = JSON.parse(text)
-        if (json.x != "r") {
-          if (result.state.debug) console.log("refresh reply not r", json)
-          json = null
-          return
-        }
-      } catch (er) {
-        if (result.state.debug) console.log(er, text)
-        json = null
-        return
-      }
-    } finally {
-      if (workerscoped) finishQuery(json)
-      else {
-        result.state.queryingsince = 0
-        result.sharedworker.postMessage({"type": "__queryFinished", "msg": json})
-      }
+  result.syncState = async function(topics) {
+    let response = await result.sendToServerAndReceive("/syncstate", null, topics)
+    if (response.status == 200) {
+      
     }
   }
-
-  // ----------------------
-
+ 
   function serialize(value) {
     return (value && typeof value.toJSON === 'function') ? value.toJSON() : value;
   }

@@ -1,13 +1,19 @@
 function initStateCircus(circus) {
+  addEventListener("beforeunload", function (e) {
+    if (window.closingmyself) return
+    if (circus.state && circus.state.sessionstate == circus.SessionStates.OPEN && circus.state.task && circus.state.pages && circus.state.pages.size == 1) return "Really exit?"
+    circus.broadcastchannel.close()
+    circus.sharedworker.postMessage({"type": "__pageclosing", "msg": window.location.pathname})
+  })
 
-  circus.state.uriprefix = ""
+  circus.uriprefix = ""
 
-  circus.handleConnectsuccess = function(initialstate) {
+  circus.handleConnectsuccess = function(state, topics) {
     circus.reconnectiontrials = 0
-    if (initialstate) {
+    if (state) {
       circus.handleStatemerge(initialstate)
       //circus.queryState("path to query request", "query parameters", circus.state.initialtopic(s))
-      //tai updateState?
+      //or updateInternalState
       circus.queryState("values", "", circus.state.firsttopic)
     }
     else circus.handleRefresh()
@@ -28,18 +34,14 @@ function initStateCircus(circus) {
       if (circus.state.alertmessage) alert(circus.state.alertmessage)
     }
     circus.statehandler()
+    circus.state.alertmessage = null
+    circus.state.once = {}
   }
 
   circus.handleQuery = function(topics) {
     if (document) document.body.style.cursor = 'wait'
     circus.queryState("values", "", ...topics)
   }
-
-  /*
-  function handleQuery(topics) {
-    if (1 in topics) queryState("path to query request", "query parameters", ...topics)
-    // else if ...
-  }*/
 
   circus.handleActions = function(actions) {
     for (let a of actions) {

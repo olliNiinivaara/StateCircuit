@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/x-icon" href="data:image/x-icon;base64,A">
-  <title>StateCircus Example App</title>
+  <title>StateCircus Example</title>
   <noscript>Javascript is required</noscript>
 </head>
 
@@ -14,26 +14,19 @@
   <div id="divapplication" style="display: none"></div>
 </body>
 
-<script src = "/sc_shared.js"></script>
+<script src = "./sc_shared.js"></script>
 <script src = "./handlers.js"></script>
 
-<script>
-  window.name = "index"
+<script type="module">
+  import {setStateCircus} from "./sc_page.js"
+  window.eid = function(id) {return document.getElementById(id)}
+  window.name="index"
   window.circus = createStateCircus()
   initStateCircus(circus)
-  function eid(id) {return document.getElementById(id)}
-</script>
+  setStateCircus(circus)
 
-<script type="module">
-  import {setStateCircus} from '/sc_page.js'
   import {renderLogin} from './login.js'
   import {renderApplication} from './application.js'
-
-  /*let circus = createStateCircus()
-  initStateCircus(circus)
-  setStateCircus(circus)*/
-
-  setStateCircus(circus)
 
   circus.setStateHandler(function() {
     if (circus.state.sessionkey == null) {
@@ -42,7 +35,7 @@
       renderLogin(eid("divlogin"))
       return
     }
-    if (circus.state.values) { 
+    if (circus.state.values) {
       if (eid("divapplication").style.display == "none") {
         eid("divlogin").style.display = "none"
         eid("divapplication").style.display = "block"

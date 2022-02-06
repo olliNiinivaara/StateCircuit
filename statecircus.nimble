@@ -6,4 +6,4 @@ description   = "Session & state management solution for multi page single page 
 license       = "MIT"
 srcDir        = "src"
 
-requires "nim >= 1.6", "guildenstern >= 5.0.0", "parasuber >= 1.0.0"
+requires "nim >= 1.6.3", "guildenstern >= 5.1.0"

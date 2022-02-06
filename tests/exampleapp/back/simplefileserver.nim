@@ -10,6 +10,11 @@ const css = ["Content-Type: text/css"]
 let Directory = getCurrentDir() & "/front"
 let PackageDirectory = execCmdEx("nimble path statecircus")[0][0 .. ^2] & "/statecircus/client"
 
+proc echoDirs*() =
+  echo "dir: ", getCurrentDir()
+  echo "frontdir: ", Directory
+  echo "packagedir: ", PackageDirectory
+
 template read(name: string): string =
   try: readFile(name)
   except:

@@ -5,9 +5,8 @@ function createStateCircus(workerscoped = false) {
     "debug": false,
     "alertmessage": null,
     "once": {},
-    "at": 0,
-    "pages": new Map(),
-    "queryingsince": 0
+    "pages": new Set(),
+    "replyrequests": new Set()
   } 
   
   let result = {"state": {}}
@@ -40,30 +39,18 @@ function createStateCircus(workerscoped = false) {
 
   result.defaultState()
 
-  async function waitForturn() {
-    while (result.state.queryingsince > 0) {
-      await new Promise(r => setTimeout(r, 200))
-      if (Date.now() - result.state.queryingsince > 10000) {
-        if (result.state.queryingsince > 0) {
-          alert("Unstable network connection. Have you tried logging out and in again?")
-          result.state.queryingsince = 0
-          return false
-        }
-      }
-    }
-    result.state.queryingsince = Date.now()
-    if (!workerscoped) result.sharedworker.postMessage({"type": "__queryStarted"})
+  result.syncState = function(topics) {
+    if (!workerscoped) result.sharedworker.postMessage({"type": "__syncstate", "msg": topics})
+    else syncState(topics)
   }
 
-  result.sendToServerAndReceive = async function(path, query, ...topics) {
+  result.post = async function(path, query) {
     if (!path) {
       console.log("path missing")
       return {status: 0, json: null}
     }
-    if (!waitForturn()) return {status: 0, json: null}
     if (!workerscoped) document.body.style.cursor = 'wait'
     let json
-    if (topics.length == 1 && Array.isArray(topics[0])) topics = topics[0]
     try {
       let response
       try {
@@ -72,7 +59,6 @@ function createStateCircus(workerscoped = false) {
         response = await fetch(path, {
           body: JSON.stringify({
             k: result.state.sessionkey,
-            t: topics,
             q: query
           }), method: "POST"
         })
@@ -83,12 +69,13 @@ function createStateCircus(workerscoped = false) {
         return {status: 503, json: null}
       }
       if (response.status !== 200) {
-        if (circus.state.debug) console.log("sendToServerAndReceive " + path + ": " + response.status)
+        if (circus.state.debug) console.log(path + ": " + response.status)
         return {status: response.status, json: null}
       }
       let text
       try {
         text = await response.text()
+        if (!text) return {status: 200, json: null}
         json = JSON.parse(text)
       } catch (er) {
         if (circus.state.debug) console.log(er, text)
@@ -97,21 +84,10 @@ function createStateCircus(workerscoped = false) {
       return {status: 200, json: json}
     } finally {
       if (workerscoped) finishQuery(json)
-      else {
-        document.body.style.cursor = 'default'
-        result.state.queryingsince = 0
-        result.sharedworker.postMessage({"type": "__queryFinished", "msg": json})
-      }
+      else document.body.style.cursor = 'default'
     }
   }
 
-  result.syncState = async function(topics) {
-    let response = await result.sendToServerAndReceive("/syncstate", null, topics)
-    if (response.status == 200) {
-      
-    }
-  }
- 
   function serialize(value) {
     return (value && typeof value.toJSON === 'function') ? value.toJSON() : value;
   }

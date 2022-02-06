@@ -2,7 +2,7 @@ let handshaking = true
 window["closingmyself"] = false
 
 export function setStateCircus(circus) {
-  circus.sharedworker = new SharedWorker('/sc_worker.js').port
+  circus.sharedworker = new SharedWorker('./sc_worker.js').port
   circus.broadcastchannel = new BroadcastChannel('statecircus_channel')
 
   circus.editingfield = null
@@ -11,23 +11,27 @@ export function setStateCircus(circus) {
   circus.eid = function(id) {return document.getElementById(id)}
 
   circus.acceptLogin = function(sessioninfo) {
-    document.body.style.cursor = 'wait'
+    // document.body.style.cursor = 'wait'
     circus.sharedworker.postMessage({"type": "__acceptlogin", "msg": {"websocketpath": sessioninfo.websocketpath, "sessionkey": sessioninfo.sessionkey}})
   }
 
-  circus.sendToServer = function(event, message) {
+  circus.sendToServer = function(event, message, requestreply) {
     if (circus.state.sessionstate !== "OPEN") {
       if (circus.state.debug) console.log("websocket is not open")
       return
     }
     if (!message) message = {}
     if (typeof (message) != "object") throw("message is not an object")
-    circus.sharedworker.postMessage({"type": event, "msg": message})
+    circus.sharedworker.postMessage({"type": event, "msg": message, "requestreply": requestreply})
   }
 
   circus.updateInternalState = function(mutations) {
     if (mutations) circus.handleStatemerge(mutations)
     circus.sharedworker.postMessage({"type": "__statecircus_state", "msg": circus.state})
+  }
+
+  circus.closePages = function() {
+    circus.sharedworker.postMessage({"type": "__closepages"})
   }
 
   circus.logOut = function(reason) {

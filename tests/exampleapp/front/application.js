@@ -1,5 +1,3 @@
-// import {circus} from '/sc_page.js'
-
 const application = `
   <input id="input">
   <button id="button">send</button>
@@ -25,7 +23,7 @@ function onOutage() {
 }
 
 function onRefresh() {
-  circus.handleRefresh()
+  circus.syncState()
 }
 
 export function renderApplication(element) {

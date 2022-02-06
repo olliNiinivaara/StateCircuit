@@ -6,17 +6,14 @@ function initStateCircus(circus) {
     circus.sharedworker.postMessage({"type": "__pageclosing", "msg": window.location.pathname})
   })
 
-  circus.uriprefix = ""
+  // circus.uriprefix = "/exampleapi"
 
   circus.handleConnectsuccess = function(state, topics) {
     circus.reconnectiontrials = 0
-    if (state) {
-      circus.handleStatemerge(initialstate)
-      //circus.queryState("path to query request", "query parameters", circus.state.initialtopic(s))
-      //or updateInternalState
-      circus.queryState("values", "", circus.state.firsttopic)
-    }
-    else circus.handleRefresh()
+    circus.handleStatemerge(state)
+    let thetopics = getTopics()
+    if (thetopics.length == 0) thetopics = topics
+    circus.syncState(thetopics)
   }
 
   circus.setStateHandler = function(statehandlerfuction) {
@@ -24,13 +21,7 @@ function initStateCircus(circus) {
   }
 
   circus.handleStatechange = function() {
-    document.body.style.cursor = 'default'
     if (document.hasFocus()) {
-      if (circus.state.debug) {
-        console.log("---statecircus state change:")
-        console.log(circus.state)
-        console.log("---")
-      }
       if (circus.state.alertmessage) alert(circus.state.alertmessage)
     }
     circus.statehandler()
@@ -38,22 +29,13 @@ function initStateCircus(circus) {
     circus.state.once = {}
   }
 
-  circus.handleQuery = function(topics) {
-    if (document) document.body.style.cursor = 'wait'
-    circus.queryState("values", "", ...topics)
+  circus.handleAction = function(action, value) {
+    if (action == "valueinserted") circus.state.values.push(value)
+    else debug("unknown action: " + action)
   }
 
-  circus.handleActions = function(actions) {
-    for (let a of actions) {
-      if (a.action == "valueinserted") {
-        circus.state.values.push(a.value)
-      }
-      else debug("unknown action: " + a.action)
-    }
-  }
-
-  circus.handleRefresh = function(path = "/refresh", aftertimestamp = circus.state.at) {
-    circus.refreshState(path, aftertimestamp)
+  circus.handleReply = function(reply, value) {
+    debug("unknown reply: " + reply)
   }
 
   circus.handleStatemerge = function(mutations) {

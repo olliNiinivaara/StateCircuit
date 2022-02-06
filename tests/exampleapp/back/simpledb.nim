@@ -9,6 +9,6 @@ proc insertValue*(value: string) =
    {.gcsafe.}: values.add(value)
 
 proc getValues*(): seq[string] =
-  {.gcsafe.}: withLock(dblock): return values
+  {.gcsafe.}: return values
 
 dblock.initLock()

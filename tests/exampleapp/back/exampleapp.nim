@@ -25,8 +25,8 @@ proc handleLogin(ctx: HttpCtx) {.raises: [].} =
     sleep(FailurePause)
     ctx.reply(Http403)
     return
-  let sessionkey = circus.startSession(ctx, userid, SessionData())
-  ctx.replyLogin(":5051/ws", sessionkey)
+  let clientkey = circus.startSession(ctx, userid, SessionData())
+  ctx.replyLogin(":5051/ws", clientkey)
 
 proc handleHttp(ctx: HttpCtx) {.gcsafe, raises: [].} =
   {.gcsafe.}:
@@ -40,14 +40,14 @@ proc handleHttp(ctx: HttpCtx) {.gcsafe, raises: [].} =
 proc onUpgradeRequest(ctx: WsCtx): (bool , proc()) {.gcsafe, raises: [].} =
   {.gcsafe.}:
     var session = circus.connectWebsocket(ctx)
-    result[0] = session.sessionkey != NoSessionKey
+    result[0] = session.clientkey != NoClientKey
     result[1] = proc() =
       var state = ""
       if circus.server.loglevel <= DEBUG: state = "{\"debug\": true}"
-      circus.sub.subscribe(session.sessionkey, BroadCastTopic)
+      circus.sub.subscribe(session.clientkey, BroadCastTopic)
       ctx.sendWs(initMessage(state, [BroadCastTopic]))
 
-proc syncState(client: SessionKey, replyid: int, expiredtopics: openArray[JsonNode]) =
+proc syncState(client: ClientKey, replyid: int, expiredtopics: openArray[JsonNode]) =
   withLock(dblock):
     circus.send(client, [circus.sub.getOldTimestamp(BroadCastTopic)], replyOne(replyid, "syncstate", $(%*{"values": getValues()})))
 
@@ -55,9 +55,9 @@ proc handleWebsocket(ctx: WsCtx) {.gcsafe, raises: [].} =
   {.gcsafe.}:
     if ctx.isRequest("PING"): (circus.server.sendPong(ctx.socketdata.socket); return)
     let (session, event, msg, replyid) = circus.receiveMessage(ctx)
-    if session.sessionkey == NoSessionKey: return
+    if session.clientkey == NoClientKey: return
 
-    if event == "syncstate": syncState(session.sessionkey, replyid, msg.getElems())
+    if event == "syncstate": syncState(session.clientkey, replyid, msg.getElems())
 
     if event == "insertvalue":
       var timestamp: TopicStamp
@@ -73,7 +73,7 @@ proc handleWebsocket(ctx: WsCtx) {.gcsafe, raises: [].} =
 
 proc close(ctx: Ctx, socket: SocketHandle, cause: SocketCloseCause, msg: string) = {.gcsafe.}:
   let session = circus.close(ctx, socket, cause)
-  if session.sessionKey != NoSessionKey: circus.sub.unsubscribe(session.sessionKey, BroadCastTopic)
+  if session.sessionKey != NoClientKey: circus.sub.unsubscribe(session.sessionKey, BroadCastTopic)
 
 proc main(port: int) =
   circus.server.registerConnectionclosedhandler(close)

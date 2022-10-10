@@ -12,7 +12,7 @@ export function setStateCircus(circus) {
 
   circus.acceptLogin = function(sessioninfo) {
     // document.body.style.cursor = 'wait'
-    circus.sharedworker.postMessage({"type": "__acceptlogin", "msg": {"websocketpath": sessioninfo.websocketpath, "sessionkey": sessioninfo.sessionkey}})
+    circus.sharedworker.postMessage({"type": "__acceptlogin", "msg": {"websocketpath": sessioninfo.websocketpath, "clientkey": sessioninfo.clientkey}})
   }
 
   circus.sendToServer = function(event, message, requestreply) {
@@ -45,7 +45,7 @@ export function setStateCircus(circus) {
       path = circus.uriprefix + path
       response = await fetch(path, {
         body: JSON.stringify({
-          k: circus.state.sessionkey,
+          k: circus.state.clientkey,
           l: lock
         }), method: "POST"
       })
@@ -115,7 +115,7 @@ export function setStateCircus(circus) {
       return
     }
 
-    if (msg.data.sessionkey == null && window.name != "index") {
+    if (msg.data.clientkey == null && window.name != "index") {
       window.open("", "index")
       window.close()
       return

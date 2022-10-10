@@ -3,9 +3,9 @@ var wsd {.threadvar.}: WsDelivery
 
 template sendDelivery() =
   #[if msg == "PING":
-    for sessionkey in subscribers:
-      let session = circus.getSession(sessionkey)
-      if session.sessionkey != NoSessionKey and session.websocket != INVALID_SOCKET: circus.server.sendPongThreadsafe(session.websocket)
+    for clientkey in subscribers:
+      let session = circus.getSession(clientkey)
+      if session.clientkey != NoClientKey and session.websocket != INVALID_SOCKET: circus.server.sendPongThreadsafe(session.websocket)
       break
     return]#
   wsd.sockets.setLen(0)
@@ -28,9 +28,9 @@ template sendDelivery() =
     wsd.message.add(",")
   wsd.message.add(msg)
   wsd.message.add("}")
-  for sessionkey in subscribers:
-    let session = circus.getSession(sessionkey)
-    if session.sessionkey == NoSessionKey or session.websocket == INVALID_SOCKET: continue
+  for clientkey in subscribers:
+    let session = circus.getSession(clientkey)
+    if session.clientkey == NoClientKey or session.websocket == INVALID_SOCKET: continue
     wsd.sockets.add(session.websocket)
   discard circus.server.multiSend(addr wsd)
 
@@ -38,13 +38,13 @@ proc send*[T](circus: StateCircus[T], topicstamps: openArray[TopicStamp], msg: s
   circus.sub.getSubscribers(topicstamps, subscribers)
   if subscribers.len > 0: sendDelivery()
 
-proc send*[T](circus: StateCircus[T], sessionkey: SessionKey, topicstamps: openArray[TopicStamp], msg: sink string) =
+proc send*[T](circus: StateCircus[T], clientkey: ClientKey, topicstamps: openArray[TopicStamp], msg: sink string) =
   subscribers.clear()
-  subscribers.incl(sessionkey.int)
+  subscribers.incl(clientkey.int)
   sendDelivery()
 
-proc send*[T](circus: StateCircus[T], sessionkey: SessionKey, msg: sink string) =
+proc send*[T](circus: StateCircus[T], clientkey: ClientKey, msg: sink string) =
   let topicstamps: array[0, TopicStamp] = []
   subscribers.clear()
-  subscribers.incl(sessionkey.int)
+  subscribers.incl(clientkey.int)
   sendDelivery()

@@ -1,6 +1,6 @@
 function createStateCircus(workerscoped = false) {
   let protostate = {
-    "sessionkey": null,
+    "clientkey": null,
     "sessionstate": "LOGGEDOUT",
     "debug": false,
     "alertmessage": null,
@@ -58,7 +58,7 @@ function createStateCircus(workerscoped = false) {
         if (result.state.debug) console.log(path)
         response = await fetch(path, {
           body: JSON.stringify({
-            k: result.state.sessionkey,
+            k: result.state.clientkey,
             q: query
           }), method: "POST"
         })

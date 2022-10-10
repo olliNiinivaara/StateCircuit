@@ -55,7 +55,39 @@ func replyState*(state: string): string {.inline.} =
   result = """"st": """
   result.add(state)
 
-func replyOne*(replyid: int, reply: string, value: string): string {.inline.} = 
+func replyOne*(replyid: int, subject: string, value: string): string {.inline.} = 
+  result = """"reply": {"replyid":"""
+  result.add($replyid)
+  result.add(""", "subject":"""")
+  result.add(subject)
+  result.add("""", "value":""")
+  result.add(value)
+  result.add'}'
+
+func replyOne*(replyid: int, subject: string, value: JsonNode): string {.inline.} = 
+  result = """"reply": {"replyid":"""
+  result.add($replyid)
+  result.add(""", "subject":"""")
+  result.add(subject)
+  result.add("""", "value":""")
+  result.add($value)
+  result.add'}'
+
+func sendOne*(subject: string, value: string): string {.inline.} = 
+  result = """"one": {"subject":""""
+  result.add(subject)
+  result.add("""", "value":""")
+  result.add(value)
+  result.add'}'
+
+func sendOne*(subject: string, value: JsonNode): string {.inline.} = 
+  result = """"one": {"subject":""""
+  result.add(subject)
+  result.add("""", "value":""")
+  result.add($value)
+  result.add'}'
+
+#[func replyOne*(replyid: int, reply: string, value: string): string {.inline.} = 
   result = """"one": {"replyid":"""
   result.add($replyid)
   result.add(""", "reply":"""")
@@ -92,7 +124,6 @@ func replyOneAndState*(replyid: int, reply: string, value: string, state: string
   result.add'}'
   result.add(""","st": """)
   result.add(state)
-  debugEcho result
 
 func replyOneAndState*(replyid: int, reply: string, value: string, state: JsonNode): string {.inline.} = 
   result = """"one": {"replyid":"""
@@ -103,4 +134,4 @@ func replyOneAndState*(replyid: int, reply: string, value: string, state: JsonNo
   result.add(value)
   result.add'}'
   result.add(""","st": """)
-  result.add($state)
+  result.add($state)]#

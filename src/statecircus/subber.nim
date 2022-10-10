@@ -2,8 +2,8 @@
 when not defined(gcDestructors): {.fatal: "gc:arc or orc compiler option required".}
 
 import std/[intsets, sets, monotimes, deques, locks]
-import pkg/[stashtable, poolpart]
-export intsets, monotimes, slots, incl
+import pkg/stashtable
+export intsets, monotimes, incl
 
 const StateCircusMaxTopics* {.intdefine.} = 10000
 const StateCircusMaxTopicsPerDelivery* {.intdefine.} = 20

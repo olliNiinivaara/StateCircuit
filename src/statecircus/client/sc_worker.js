@@ -92,7 +92,7 @@ function logOut(reason) {
 }
 
 function connectUntilTimeout() {
-  if (!circus.state.sessionkey) {
+  if (!circus.state.clientkey) {
     logOut("no session")
     return
   }
@@ -113,7 +113,7 @@ function connectUntilTimeout() {
 
 function connectWs() {
   debug("connectWs")
-  if (!circus.state.sessionkey || !websocketurl) {
+  if (!circus.state.clientkey || !websocketurl) {
     logOut("connectWs called without session or url")
     return
   }
@@ -190,7 +190,7 @@ function sendTowebsocket(message) {
     circus.state.sessionstate = circus.SessionStates.CLOSED
     connectUntilTimeout()
   }
-  message.k = circus.state.sessionkey
+  message.k = circus.state.clientkey
   if (message.rr) {
     let replyid = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)  
     circus.state.replyrequests.add(replyid)
@@ -233,12 +233,12 @@ onconnect = async function(e) {
     }
     else if (e.data.type === "__acceptlogin") {
       try {
-        circus.state.sessionkey = e.data.msg.sessionkey
+        circus.state.clientkey = e.data.msg.clientkey
         let wsproto = "wss://"
         if (location.protocol === "http:") wsproto = "ws://"
         let path = location.host + e.data.msg.websocketpath
         if (e.data.msg.websocketpath.startsWith(":")) path = location.hostname + e.data.msg.websocketpath
-        websocketurl = wsproto + path + "/S" + circus.state.sessionkey
+        websocketurl = wsproto + path + "/S" + circus.state.clientkey
         connectUntilTimeout()
       } catch (ex) {
         console.log(ex)

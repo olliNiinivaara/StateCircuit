@@ -29,7 +29,7 @@
   import {renderApplication} from './application.js'
 
   circus.setStateHandler(function() {
-    if (circus.state.sessionkey == null) {
+    if (circus.state.clientkey == null) {
       eid("divapplication").style.display = "none"
       eid("divlogin").style.display = "block"
       renderLogin(eid("divlogin"))

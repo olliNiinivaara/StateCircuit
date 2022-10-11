@@ -3,12 +3,12 @@ from math import `^`
 from strmisc import rpartition
 from parseutils import parseBiggestInt
 from os import sleep
-from httpcore import HttpCode, Http400, Http403, Http404, Http500, Http503
+from httpcore import HttpCode, Http400, Http403, Http404, Http409, Http500, Http503
 
 import pkg/[guildenstern/ctxws, stashtable]
 import pkg/statecircus/[replies, subber]
 
-export ctxws, subber, replies, sleep, Http400, Http403, Http404, Http500, Http503
+export ctxws, subber, replies, sleep, Http400, Http403, Http404, Http409, Http500, Http503
 
 #[
   x:

@@ -15,19 +15,38 @@ let websocketurl
 let topictimestamps = new Map()
 let expiredtopics = []
 
+function triggerStateChange() {
+  channel.postMessage(circus.state)
+  circus.state.once = {}
+  circus.state.alertmessage = null
+  circus.state.logtext = null
+  circus.state.logobject = null
+}
+
 function log(text, object) {
-  console.log("---statecircus sharedworker log:")
+  /*console.log("---statecircus sharedworker log:")
   if (text) console.log(text)
   if (object) console.log({object})
-  console.log("---")
+  console.log("---")*/
+  if (!circus.state.logtext) circus.state.logtext = text
+  else circus.state.logtext += " - " + text
+  circus.state.logobject = object
+  //channel.postMessage(circus.state)
+  //circus.state.logtext = null
+  //circus.state.logobject = null
 }
 
 function debug(text, object) {
   if (circus.state && !circus.state.debug) return
-  console.trace()
-  if (text) console.log("  ", text)
+  if (!circus.state.logtext) circus.state.logtext = text
+  else circus.state.logtext += " - " + text
+  circus.state.logobject = object
+  //channel.postMessage(circus.state)
+  //circus.state.logtext = null
+  //circus.state.logobject = null
+  /*if (text) console.log("  ", text)
   if (object) console.log({object})
-  console.log(" ")
+  console.log(" ")*/
 }
 
 function getTopics() {
@@ -40,24 +59,21 @@ function getTopics() {
 }
 
 function syncState(topics) {
-  if (!topics) topics = Array.from(topictimestamps.keys())
   sendTowebsocket({"e": "syncstate", "m": topics, "rr": true})
 }
 
 function update(msg) {
   if (msg.tos) {
-    if (!msg.one || !msg.one.reply || msg.one.reply !== "syncstate") {
-      for (let msgtopicstamp of msg.tos) {
-        const locallyat = topictimestamps.get(msgtopicstamp.to)
-        if (locallyat && locallyat < msgtopicstamp.old) {
-          expiredtopics.push(msgtopicstamp.to)
-          topictimestamps.delete(msgtopicstamp.to)
-        }
+    for (let msgtopicstamp of msg.tos) {
+      const locallyat = topictimestamps.get(msgtopicstamp.to)
+      if (locallyat && locallyat < msgtopicstamp.old) {
+        expiredtopics.push(msgtopicstamp.to)
+        topictimestamps.delete(msgtopicstamp.to)
       }
-      if (expiredtopics.length > 0) {
-        syncState(expiredtopics)
-        return false
-      }
+    }
+    if (expiredtopics.length > 0) {
+      sendTowebsocket({"e": "syncstate", "m": expiredtopics, "rr": true})
+      return false
     }
     for (let msgtopicstamp of msg.tos) {
       topictimestamps.set(msgtopicstamp.to, msgtopicstamp.now)
@@ -65,18 +81,21 @@ function update(msg) {
   }
   if (msg.st) circus.handleStatemerge(msg.st)
   if (msg.a) circus.handleAction(msg.a.action, msg.a.value)
-  if (msg.one && circus.state.replyrequests.has(msg.one.replyid)) {
-    circus.state.replyrequests.delete(msg.one.replyid)
-    if (msg.one.reply === "syncstate") {
-      for (let topic of expiredtopics) {
-        topictimestamps.delete(topic)
+  if (msg.one) circus.handleOne(msg.one.subject, msg.one.value)
+  if (msg.reply) {
+    if (circus.state.replyrequests.has(msg.reply.replyid)) {
+      circus.state.replyrequests.delete(msg.reply.replyid)
+      if (msg.reply.subject == "syncstate") {
+        for (let topic of expiredtopics) {
+          topictimestamps.delete(topic)
+        }
+        expiredtopics = []
+        circus.handleStatemerge(msg.reply.value)
       }
-      expiredtopics = []
-      circus.handleStatemerge(msg.one.value)
     }
-    else circus.handleReply(msg.one.reply, msg.one.value)
+    else circus.handleReply(msg.reply.subject, msg.reply.value)
   }
-  if (msg.st || msg.a || msg.one) return true
+  if (msg.st || msg.a || msg.one || msg.reply) return true
 }
 
 function logOut(reason) {
@@ -87,8 +106,7 @@ function logOut(reason) {
   circus.defaultState()
   websocketurl = null
   circus.state.alertmessage = reason
-  channel.postMessage(circus.state)
-  circus.state.alertmessage = null
+  triggerStateChange()
 }
 
 function connectUntilTimeout() {
@@ -96,18 +114,18 @@ function connectUntilTimeout() {
     logOut("no session")
     return
   }
-  if (webSocket && webSocket.readyState === wsOPEN) {
+  if (webSocket && webSocket.readyState == wsOPEN) {
     circus.state.sessionstate = circus.SessionStates.OPEN
     channel.postMessage(circus.state)
     return
   }
-  if (circus.state.sessionstate === circus.SessionStates.CONNECTING) return
-  let informpages = circus.state.sessionstate === circus.SessionStates.OPEN
+  if (circus.state.sessionstate == circus.SessionStates.CONNECTING) return
+  let informpages = circus.state.sessionstate == circus.SessionStates.OPEN
   circus.state.sessionstate = circus.SessionStates.CONNECTING
   if (informpages) channel.postMessage(circus.state)
   connectWs()
   setTimeout( () => {
-    if (!webSocket || webSocket.readyState !== wsOPEN) circus.handleConnectfailure()
+    if (!webSocket || webSocket.readyState != wsOPEN) circus.handleConnectfailure()
   }, 10000)
 }
 
@@ -136,7 +154,7 @@ function connectWs() {
       else logOut()
     }
     webSocket.onmessage = function(event) {
-      if (circus.state.sessionstate === circus.SessionStates.SIMULATEDOUTAGE) {
+      if (circus.state.sessionstate == circus.SessionStates.SIMULATEDOUTAGE) {
         log("ws message ignored because network outage is being simulated")
         return
       }
@@ -145,22 +163,21 @@ function connectWs() {
         message = JSON.parse(event.data)
       } catch (err) {
         debug("ws syntax error", err.message)
-        debug("msg", event.data)
+        debug(event.data)
         logOut("ws syntax error")
         return
       }
       debug("ws message", message)
-      if (message.x === "l") {
+      if (message.x == "l") {
         logOut("logout received")
         return
       }
-      if (message.x === "o") {
+      if (message.x == "o") {
         circus.handleServeroverload()
-        channel.postMessage(circus.state)
-        circus.state.alertmessage = null
+        triggerStateChange()
         return
       }
-      if (message.x === "i") {
+      if (message.x == "i") {
         circus.state.sessionstate = circus.SessionStates.OPEN
         circus.handleConnectsuccess(message.state, message.topics)
         initialized = true
@@ -168,14 +185,12 @@ function connectWs() {
         // circus.state.alertmessage = null
         return
       }
-      if (message.x === "u") {
+      if (message.x == "u") {
         let statechange = update(message)
-        if (circus.state.sessionstate === circus.SessionStates.LOGGEDOUT) return
+        if (circus.state.sessionstate == circus.SessionStates.LOGGEDOUT) return
         if (statechange) {
           circus.inspectReceivedState()
-          channel.postMessage(circus.state)
-          circus.state.alertmessage = null
-          circus.state.once = {}
+          triggerStateChange()
         }
         return
       }
@@ -185,8 +200,8 @@ function connectWs() {
 }
 
 function sendTowebsocket(message) {
-  if (circus.state.sessionstate === circus.SessionStates.LOGGEDOUT) return
-  if (!webSocket || webSocket.readyState !== wsOPEN) {
+  if (circus.state.sessionstate == circus.SessionStates.LOGGEDOUT) return
+  if (!webSocket || webSocket.readyState != wsOPEN) {
     circus.state.sessionstate = circus.SessionStates.CLOSED
     connectUntilTimeout()
   }
@@ -214,28 +229,28 @@ onconnect = async function(e) {
     debug(null, e.data)
     if (!e.data) return
 
-    if (e.data.type === "__pageconfirmedconnection") {
+    if (e.data.type == "__pageconfirmedconnection") {
       connectionconfirmed = true
       if (e.data.msg) circus.state.pages.add(e.data.msg)
     }
-    else if (e.data.type === "__focuspage") {
+    else if (e.data.type == "__focuspage") {
       channel.postMessage({"focuspage": e.data.msg})
     }
-    else if (e.data.type === "__closepage") {
+    else if (e.data.type == "__closepage") {
       circus.state.pages.delete(e.data.msg)
       channel.postMessage({"closepage": e.data.msg})
     }
-    else if (e.data.type === "__closepages") {
+    else if (e.data.type == "__closepages") {
       for (let page of circus.state.pages.values()) {
-        if (page !== "/") channel.postMessage({"closepage": page})
+        if (page != "/") channel.postMessage({"closepage": page})
       }
       circus.state.pages.clear()
     }
-    else if (e.data.type === "__acceptlogin") {
+    else if (e.data.type == "__acceptlogin") {
       try {
         circus.state.clientkey = e.data.msg.clientkey
         let wsproto = "wss://"
-        if (location.protocol === "http:") wsproto = "ws://"
+        if (location.protocol == "http:") wsproto = "ws://"
         let path = location.host + e.data.msg.websocketpath
         if (e.data.msg.websocketpath.startsWith(":")) path = location.hostname + e.data.msg.websocketpath
         websocketurl = wsproto + path + "/S" + circus.state.clientkey
@@ -245,27 +260,25 @@ onconnect = async function(e) {
         console.log(JSON.stringify(e))
       }
     }
-    else if (e.data.type === "__statecircus_state") {
+    else if (e.data.type == "__statecircus_state") {
       circus.state = e.data.msg
-      channel.postMessage(circus.state)
-      circus.state.alertmessage = null
-      circus.state.once = {}
+      triggerStateChange()
     }
-    else if (e.data.type === "__syncstate") syncState(e.data.msg)
-    else if (e.data.type === "__logout") logOut(e.data.msg)
-    else if (e.data.type === "__pageclosing") {
+    else if (e.data.type == "__syncstate") syncState(e.data.msg)
+    else if (e.data.type == "__logout") logOut(e.data.msg)
+    else if (e.data.type == "__pageclosing") {
       if (circus.state) {
         circus.state.pages.delete(e.data.msg)
-        if (circus.state.pages.size === 0) logOut("last page closed")
+        if (circus.state.pages.size == 0) logOut("last page closed")
       }
       else logOut("nopage")
     }
-    else if (e.data.type === "__simulatedoutage") {
+    else if (e.data.type == "__simulatedoutage") {
       if (e.data.msg.simulatedoutage) {
-        if (circus.state.sessionstate === circus.SessionStates.OPEN) circus.state.sessionstate = circus.SessionStates.SIMULATEDOUTAGE
+        if (circus.state.sessionstate == circus.SessionStates.OPEN) circus.state.sessionstate = circus.SessionStates.SIMULATEDOUTAGE
       }
       else {
-        if (!webSocket || webSocket.readyState !== wsOPEN) circus.state.sessionstate = circus.SessionStates.CLOSED
+        if (!webSocket || webSocket.readyState != wsOPEN) circus.state.sessionstate = circus.SessionStates.CLOSED
         else circus.state.sessionstate = circus.SessionStates.OPEN
       }
       channel.postMessage(circus.state)

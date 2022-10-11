@@ -25,17 +25,14 @@ const
 type
   ClientKey* = Subscriber
 
-  Session*[T] = object
+  Connection* = object
     clientkey*: ClientKey
-    userid*: string
     ip*: string
     websocket*: SocketHandle
     starttime*: DateTime
-    data*: T
     
-  StateCircus*[T] = object
-    stash*: StashTable[int64, Session[T], MaxSessions]
-    NoSession*: Session[T]
+  StateCircus* = object
+    stash*: StashTable[int64, Connection, MaxSessions]
     ipheader*: string
     lock: Lock
     server*: GuildenServer
@@ -47,6 +44,7 @@ const
   FailurePause* {.intdefine.} = 4000
 
 let
+  NoConnection* = Connection()
   NoTimestamp* = toMonoTime(0)
   NullNode* = newJNull()
   LogoutMessage* = """{"x":"l"}"""
@@ -57,19 +55,16 @@ var
   # TODO: use new OS random source
   randomer = initRand(getMonoTime().ticks())
 
-proc startSession*[T](circus: var StateCircus[T], ctx: HttpCtx, userid: string, data: T): ClientKey {.raises: [].} =
+proc initConnection*(circus: var StateCircus, ctx: HttpCtx): ClientKey {.raises: [].} =
   withLock(circus.lock):
     if circus.stash.len == MaxSessions: return NoClientKey
     let clientkey = ClientKey(1 + 2^20 * randomer.rand(2^20).int64 + randomer.rand(int32.high).int64)
-    let userid =
-      if userid == "": $clientkey
-      else: userid
     var oldsessionkey = NoClientKey
     var oldsocket = INVALID_SOCKET
     for (key, index) in circus.stash.keys():
       circus.stash.withFound(key, index):
         if ClientKey(key) == clientkey: return NoClientKey # key already in use, improbable
-        if value.userid == userid:
+        if value.clientkey == clientkey:
           oldsessionkey = ClientKey(key)
           oldsocket = value.websocket
     if not (oldsessionkey == NoClientKey):
@@ -79,11 +74,11 @@ proc startSession*[T](circus: var StateCircus[T], ctx: HttpCtx, userid: string, 
 
     var headervalue: array[1, string]
     if circus.ipheader != "": ctx.parseHeaders([circus.ipheader], headervalue)
-    let session = Session[T](clientkey: clientkey, userid: userid, ip: headervalue[0], websocket: InvalidSocket, starttime: now(), data: data)
+    let session = Connection(clientkey: clientkey, ip: headervalue[0], websocket: InvalidSocket, starttime: now())
     circus.stash.insert(int64(clientkey), session)
     return clientkey
 
-proc registerWebSocket*[T](circus: StateCircus[T], clientkey: ClientKey, websocket: SocketHandle, usetimeout = true): bool =
+proc registerWebSocket*(circus: StateCircus, clientkey: ClientKey, websocket: SocketHandle, usetimeout = true): bool =
   circus.stash.withValue(int64(clientkey)):
     if value.websocket != INVALID_SOCKET: return false
     if usetimeout and websocketregistrationtimewindow <= now() - value.starttime: return false
@@ -92,31 +87,31 @@ proc registerWebSocket*[T](circus: StateCircus[T], clientkey: ClientKey, websock
   do:
     return false
 
-proc unregisterWebSocket*[T](circus: StateCircus[T], clientkey: ClientKey) =
+proc unregisterWebSocket*(circus: StateCircus, clientkey: ClientKey) =
   circus.stash.withValue(int64(clientkey)): value.websocket = INVALID_SOCKET
 
-proc findSessionKey*[T](circus: StateCircus[T], websocket: SocketHandle): ClientKey =
+proc findClientKey*(circus: StateCircus, websocket: SocketHandle): ClientKey =
   for (k , index) in circus.stash.keys:
     circus.stash.withFound(k, index):
       if value.websocket == websocket: return value.clientkey
   return NoClientKey
 
-proc endSession*[T](circus: StateCircus[T], clientkey: ClientKey) =
+proc removeConnection*(circus: StateCircus, clientkey: ClientKey) =
   circus.stash.del(int64(clientkey))
 
-proc getSession*[T](circus: StateCircus[T], clientkey: ClientKey | Subscriber | int): Session[T] {.inline.} =
+proc getConnection*(circus: StateCircus, clientkey: ClientKey | Subscriber | int): Connection {.inline.} =
   circus.stash.withValue(int64(clientkey)):
     return value[]
   do:
-    return circus.NoSession
+    return NoConnection
 
-proc getSession*[T](circus: StateCircus[T], clientkey: ClientKey, ctx: Ctx): Session[T] =
-  let session = circus.getSession(clientkey)
+proc getConnection*(circus: StateCircus, clientkey: ClientKey, ctx: Ctx): Connection =
+  let session = circus.getConnection(clientkey)
   if session.clientkey == NoClientKey or session.websocket != ctx.socketdata.socket:
     ctx.closeSocket(SecurityThreatened)
   return session
 
-proc getSessionPtr*[T](circus: StateCircus[T], clientkey: ClientKey | Subscriber | int): ptr Session[T] {.inline.} =
+proc getConnectionPtr*(circus: StateCircus, clientkey: ClientKey | Subscriber | int): ptr Connection {.inline.} =
   circus.stash.withValue(int64(clientkey)):
     return value
   do:
@@ -130,18 +125,18 @@ proc replyLogin*(ctx: HttpCtx, websocketpath: string, clientkey: ClientKey) =
     var s = $(%*{"websocketpath": websocketpath, "clientkey": clientkey.int64})
     ctx.reply(Http200, s)
 
-proc validateIp[T](circus: StateCircus[T], ctx: HttpCtx, session: Session): bool =
+proc validateIp(circus: StateCircus, ctx: HttpCtx, session: Connection): bool =
   var headervalue: array[1, string]
   if circus.ipheader != "": ctx.parseHeaders([circus.ipheader], headervalue)
   return headervalue[0] == session.ip
 
-proc getSessionkey*[T](circus: StateCircus[T], ctx: HttpCtx, bodyjson: JsonNode): ClientKey =
+proc getClientkey*(circus: StateCircus, ctx: HttpCtx, bodyjson: JsonNode): ClientKey =
   result =
     try: bodyjson["k"].getInt().ClientKey
     except:
       ctx.reply(Http400)
       return
-  let session = circus.getSession(result)
+  let session = circus.getConnection(result)
   if (unlikely)session.clientkey == NoClientKey:
     ctx.reply(Http400)
     return
@@ -149,7 +144,7 @@ proc getSessionkey*[T](circus: StateCircus[T], ctx: HttpCtx, bodyjson: JsonNode)
     result = NoClientKey
     ctx.reply(Http400)
 
-proc connectWebsocket*[T](circus: StateCircus[T], ctx: WsCtx, usetimetimeout = true): Session[T] {.raises: [].} =
+proc connectWebsocket*(circus: StateCircus, ctx: WsCtx, usetimetimeout = true): Connection {.raises: [].} =
   var clientkey = NoClientKey
   try:
     var i: BiggestInt
@@ -159,60 +154,60 @@ proc connectWebsocket*[T](circus: StateCircus[T], ctx: WsCtx, usetimetimeout = t
     circus.server.log(WARN, "could not parse session key from: " & ctx.getUri())
     return
   {.gcsafe.}:
-    if circus.registerWebSocket(clientkey, ctx.socketdata.socket, usetimetimeout): return circus.getSession(clientkey)
+    if circus.registerWebSocket(clientkey, ctx.socketdata.socket, usetimetimeout):
+      return circus.getConnection(clientkey)
 
 # TODO: use'em websockets?
-proc tryToLock*[T](circus: StateCircus[T], ctx: HttpCtx) =
+proc tryToLock*(circus: StateCircus, ctx: HttpCtx) =
   let success = "true"
   let body = 
     try: parseJson(ctx.getBody())
     except:
       ctx.reply(Http400)
       return
-  let clientkey = circus.getSessionkey(ctx, body)
+  let clientkey = circus.getClientkey(ctx, body)
   if clientkey == NoClientKey: return
   # TODO: lock may require that userid is subscribed to a topic
   # TODO: if now - lockedsince > maxlockduration, release lock
   # TODO: if lock owner == userid, only refresh lockedsince
   ctx.reply(success)
 
-proc releaseLock*[T](circus: StateCircus[T], clientkey: ClientKey, lock: string) =
+proc releaseLock*(circus: StateCircus, clientkey: ClientKey, lock: string) =
   # TODO ...
   discard
 
-proc receiveMessage*[T](circus: StateCircus[T], ctx: WsCtx): (Session[T] , string, JsonNode, int) {.raises: [].} =
+proc receiveMessage*(circus: StateCircus, ctx: WsCtx): (Connection , string, JsonNode, int) {.raises: [].} =
   {.gcsafe.}:
     try:
       result[0].clientkey = NoClientKey
       if circus.server.loglevel == TRACE: echo ctx.getRequest()
       let msg = parseJson(ctx.getRequest())
       let clientkey = msg["k"].getInt().ClientKey
-      result[0] = circus.getSession(clientkey, ctx)
+      result[0] = circus.getConnection(clientkey, ctx)
       if result[0].clientkey == NoClientKey: return
       result[1] = msg["e"].getStr()
       result[2] = msg["m"]
       result[3] = msg["rr"].getInt()
     except: circus.server.log(ERROR, "receiveMessage failed")
 
-proc logOut*[T](circus: StateCircus[T], clientkey: ClientKey, closesocket = true): Session[T] =
+proc logOut*(circus: StateCircus, clientkey: ClientKey, socketneedsclosing = true): Connection =
   circus.sub.removeSubscriber(clientkey.Subscriber)   # TODO: if last subscriber for a topic, compact parasuber
-  result = circus.getSession(clientkey)
+  result = circus.getConnection(clientkey)
   if result.clientkey == NoClientKey: return
-  circus.endSession(result.clientkey)
+  circus.removeConnection(result.clientkey)
   # TODO: release all locks held by this userid
-  if closesocket and result.websocket != INVALID_SOCKET:
+  if socketneedsclosing and result.websocket != INVALID_SOCKET:
     circus.server.closeOtherSocket(result.websocket, CloseCalled)
 
-proc close*[T](circus: var StateCircus[T], socket: SocketHandle, cause: SocketCloseCause): Session[T] =
+proc close*(circus: var StateCircus, socket: SocketHandle, cause: SocketCloseCause, logout = true): Connection =
   {.gcsafe.}:
-    let clientkey = circus.findSessionKey(socket)
-    if clientkey == NoClientKey: circus.NoSession
-    else:
-      circus.unregisterWebSocket(clientkey)
-      if cause == ConnectionLost: circus.NoSession
-      else: circus.logOut(clientkey, false)
+    let clientkey = circus.findClientKey(socket)
+    if clientkey == NoClientKey: return NoConnection  
+    circus.unregisterWebSocket(clientkey)
+    if cause == ConnectionLost or not logout: return NoConnection
+    circus.logOut(clientkey, false)
 
-proc closeAll*[T](circus: var StateCircus[T]) =
+proc closeAll*(circus: var StateCircus) =
   var sockets = newSeq[SocketHandle]()
   for (key, index) in circus.stash.keys():
      circus.stash.withFound(key, index):
@@ -221,10 +216,9 @@ proc closeAll*[T](circus: var StateCircus[T]) =
   circus.stash.clear()
   circus.sub.clear()
 
-proc newStateCircus*[T](ipheader = ""): StateCircus[T] =
-  result = StateCircus[T]()
-  result.stash = newStashTable[int64, Session[T], MaxSessions]()
-  result.NoSession = Session[T]()
+proc newStateCircus*(ipheader = ""): StateCircus =
+  result = StateCircus()
+  result.stash = newStashTable[int64, Connection, MaxSessions]()
   result.lock.initLock()
   result.sub = newSubber()  
   result.server = new GuildenServer

@@ -71,7 +71,7 @@ proc initConnection*(circus: var StateCircus): ClientKey {.raises: [].} =
     if not (oldsessionkey == NoClientKey):
       circus.stash.del(int64(oldsessionkey))
       wsserver.send(oldsocket, LogoutMessage)
-      wsserver.doCloseOtherSocket(wsserver, oldsocket, SecurityThreatened, "user started new session from different socket")
+      wsserver.closeOtherSocket(oldsocket, SecurityThreatened, "user started new session from different socket")
 
     var headervalue: array[1, string]
     if circus.ipheader != "": parseHeaders([circus.ipheader], headervalue)
@@ -109,7 +109,7 @@ proc getConnection*(circus: StateCircus, clientkey: ClientKey | Subscriber | int
 proc getSecureConnection*(circus: StateCircus, clientkey: ClientKey): Connection =
   let session = circus.getConnection(clientkey)
   if session.clientkey == NoClientKey or session.websocket != http.socketdata.socket:
-    server.doCloseSocket(http.socketdata, SecurityThreatened, "")
+    server.closeSocket(http.socketdata, SecurityThreatened, "")
   return session
 
 proc getConnectionPtr*(circus: StateCircus, clientkey: ClientKey | Subscriber | int): ptr Connection {.inline.} =
@@ -198,7 +198,7 @@ proc logOut*(circus: StateCircus, clientkey: ClientKey, socketneedsclosing = tru
   circus.removeConnection(result.clientkey)
   # TODO: release all locks held by this userid
   if socketneedsclosing and result.websocket != INVALID_SOCKET:
-    circus.server.doCloseOtherSocket(circus.server, result.websocket, CloseCalled, "")
+    circus.server.closeOtherSocket(result.websocket)
 
 proc close*(circus: var StateCircus, socket: SocketHandle, cause: SocketCloseCause, logout = true): Connection =
   {.gcsafe.}:
@@ -213,7 +213,7 @@ proc closeAll*(circus: var StateCircus) =
   for (key, index) in circus.stash.keys():
      circus.stash.withFound(key, index):
       if value.websocket != INVALID_SOCKET: sockets.add(value.websocket)
-  for socket in sockets: circus.server.doCloseOtherSocket(circus.server, socket, CloseCalled, "")
+  for socket in sockets: circus.server.closeOtherSocket(socket)
   circus.stash.clear()
   circus.sub.clear()
 

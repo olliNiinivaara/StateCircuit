@@ -1,8 +1,10 @@
 let handshaking = true
 window["closingmyself"] = false
 
-export function setStateCircus(circus) {
-  circus.sharedworker = new SharedWorker('./sc_worker.js').port
+export function setStateCircus(circus, path) {
+  if (!path) path = "/"
+  circus.sharedworker = new SharedWorker(path + 'sc_worker.js').port
+  circus.sharedworker.start()
   circus.broadcastchannel = new BroadcastChannel('statecircus_channel')
 
   circus.editingfield = null

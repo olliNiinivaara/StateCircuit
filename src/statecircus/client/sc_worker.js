@@ -19,34 +19,21 @@ function triggerStateChange() {
   channel.postMessage(circus.state)
   circus.state.once = {}
   circus.state.alertmessage = null
-  circus.state.logtext = null
-  circus.state.logobject = null
 }
 
 function log(text, object) {
-  /*console.log("---statecircus sharedworker log:")
+  console.log("---statecircus log:")
   if (text) console.log(text)
   if (object) console.log({object})
-  console.log("---")*/
-  if (!circus.state.logtext) circus.state.logtext = text
-  else circus.state.logtext += " - " + text
-  circus.state.logobject = object
-  //channel.postMessage(circus.state)
-  //circus.state.logtext = null
-  //circus.state.logobject = null
+  console.log("---")
 }
 
 function debug(text, object) {
-  if (circus.state && !circus.state.debug) return
-  if (!circus.state.logtext) circus.state.logtext = text
-  else circus.state.logtext += " - " + text
-  circus.state.logobject = object
-  //channel.postMessage(circus.state)
-  //circus.state.logtext = null
-  //circus.state.logobject = null
-  /*if (text) console.log("  ", text)
+  if (circus.state && circus.state.sessionstate == circus.SessionStates.OPEN && !circus.state.debug) return
+  console.log("---statecircus debug:")
+  if (text) console.log(text)
   if (object) console.log({object})
-  console.log(" ")*/
+  console.log("---")
 }
 
 function getTopics() {
@@ -146,7 +133,7 @@ function connectWs() {
   webSocket.onopen = function() {
     if (initialized) {
       circus.state.sessionstate = circus.SessionStates.OPEN
-      circus.handleConnectsuccess()
+      // circus.handleConnectsuccess() only after init message...
     }
     webSocket.onclose = function(event) {
       debug("ws closed: " + event.code)
@@ -179,10 +166,11 @@ function connectWs() {
       }
       if (message.x == "i") {
         circus.state.sessionstate = circus.SessionStates.OPEN
-        circus.handleConnectsuccess(message.state, message.topics)
+        circus.handleConnectsuccess(message.state, message.topics) // topics ingored...
         initialized = true
         // channel.postMessage(circus.state)
-        // circus.state.alertmessage = null
+        circus.inspectReceivedState()
+        triggerStateChange()
         return
       }
       if (message.x == "u") {

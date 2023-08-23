@@ -4,8 +4,6 @@ function createStateCircus(workerscoped = false) {
     "sessionstate": "LOGGEDOUT",
     "debug": false,
     "alertmessage": null,
-    "logtext": null,
-    "logobject": null,
     "once": {},
     "pages": new Set(),
     "replyrequests": new Set()

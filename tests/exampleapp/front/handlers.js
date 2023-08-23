@@ -11,9 +11,9 @@ function initStateCircus(circus) {
   circus.handleConnectsuccess = function(state, topics) {
     circus.reconnectiontrials = 0
     circus.handleStatemerge(state)
-    let thetopics = getTopics()
+    /*let thetopics = getTopics()
     if (thetopics.length == 0) thetopics = topics
-    circus.syncState(thetopics)
+    circus.syncState(thetopics)*/
   }
 
   circus.setStateHandler = function(statehandlerfuction) {

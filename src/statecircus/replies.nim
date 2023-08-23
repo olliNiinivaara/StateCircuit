@@ -1,12 +1,25 @@
 import std/json
-from pkg/statecircus/subber import Topic, Subscriber, `$`
+from subber import Topic, Subscriber, `$`
 
-func initMessage*(state: string, topics: openArray[Topic]): string =
+proc initMessage*(state: string = "", topics: openArray[Topic]): string =
   result = """{"x":"i", """
   if state != "":
     result.add(""""state": """)
     result.add(state)
     result.add(',')
+  if topics.len > 0:
+    result.add(""""topics": [""")
+    for topic in topics:
+      result.add($int(topic))
+      result.add(',')
+    result[result.high] = ']'  
+  result.add('}')
+
+proc initMessage*(state: JSonNode, topics: openArray[Topic]): string =
+  result = """{"x":"i", """
+  result.add(""""state": """)
+  result.add($state)
+  result.add(',')
   if topics.len > 0:
     result.add(""""topics": [""")
     for topic in topics:

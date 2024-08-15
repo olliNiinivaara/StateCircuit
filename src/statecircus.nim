@@ -5,8 +5,8 @@ from parseutils import parseBiggestInt
 from os import sleep
 from httpcore import HttpCode, Http400, Http403, Http404, Http409, Http500, Http503
 
-import pkg/[guildenstern/websocketserver, stashtable]
-import pkg/statecircus/[replies, subber]
+import guildenstern/websocketserver, stashtable
+import statecircus/[replies, subber]
 
 export websocketserver, subber, replies, sleep, Http400, Http403, Http404, Http409, Http500, Http503
 
@@ -75,7 +75,7 @@ proc initConnection*(circus: var StateCircus, clientkey = NoClientKey): ClientKe
       wsserver.closeOtherSocket(oldsocket, SecurityThreatened, "user started new session from different socket")
 
     var headervalue: array[1, string]
-    if circus.ipheader != "": parseHeaders([circus.ipheader], headervalue)
+    # if circus.ipheader != "": parseHeaders([circus.ipheader], headervalue) headerisynsteemi muuttunut versiossa 7
     let session = Connection(clientkey: clientkey, ip: headervalue[0], websocket: InvalidSocket, starttime: now())
     circus.stash.insert(int64(clientkey), session)
     return clientkey
@@ -91,7 +91,6 @@ proc registerWebSocket*(circus: StateCircus, clientkey: ClientKey, websocket: So
 
 proc removeWebsocket*(circus: StateCircus, clientkey: ClientKey) =
   circus.stash.withValue(int64(clientkey)): value.websocket = INVALID_SOCKET
-
 
 proc findClientKey*(circus: StateCircus, websocket: SocketHandle): ClientKey =
   for (k , index) in circus.stash.keys:
@@ -130,7 +129,7 @@ proc replyLogin*(websocketpath: string, clientkey: ClientKey) =
 
 proc validateIp(circus: StateCircus, session: Connection): bool =
   var headervalue: array[1, string]
-  if circus.ipheader != "": parseHeaders([circus.ipheader], headervalue)
+  # if circus.ipheader != "": parseHeaders([circus.ipheader], headervalue)
   return headervalue[0] == session.ip
 
 proc getClientkey*(circus: StateCircus, bodyjson: JsonNode): ClientKey =
@@ -193,14 +192,14 @@ proc receiveMessage*(circus: StateCircus): (Connection , string, JsonNode, int) 
       result[3] = msg["rr"].getInt()
     except: circus.server.log(ERROR, "receiveMessage failed")
 
-proc logOut*(circus: StateCircus, clientkey: ClientKey): Connection =
+proc logOut*(circus: StateCircus, clientkey: ClientKey) =
   circus.sub.removeSubscriber(clientkey.Subscriber)   # TODO: if last subscriber for a topic, compact parasuber
-  result = circus.getConnection(clientkey)
-  if result.clientkey != NoClientKey: circus.removeConnection(result.clientkey)
+  let conn = circus.getConnection(clientkey)
+  if conn.clientkey != NoClientKey: circus.removeConnection(conn.clientkey)
   # TODO: release all locks held by this userid
-  if result.websocket != INVALID_SOCKET: circus.server.closeOtherSocket(result.websocket)
+  # if conn.websocket != INVALID_SOCKET: circus.server.closeOtherSocket(conn.websocket)
 
-proc logoutAll*(circus: var StateCircus) =
+proc disconnectAll*(circus: var StateCircus) =
   var sockets = newSeq[SocketHandle]()
   for (key, index) in circus.stash.keys():
      circus.stash.withFound(key, index):
@@ -222,4 +221,4 @@ proc newStateCircus*(ipheader = ""): StateCircus =
   result.server = new GuildenServer
   result.ipheader = ipheader
 
-include pkg/statecircus/sender
+include statecircus/sender
